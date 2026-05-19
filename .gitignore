@@ -1,0 +1,31 @@
+# 環境設定（含機密）
+.env
+*.json
+!.env.example
+
+# 資料（各單位自行 /同步 下載）
+data/raw/
+data/extracted/
+data/index.sqlite3
+data/drive_manifest.json
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+
+# 日誌
+logs/
+
+# macOS
+.DS_Store
+
+# Windows
+cloudflared.exe
+Thumbs.db
+
+# Service Account 金鑰（絕對不能上傳）
+service_account.json
+*_service_account.json
+google_service_account.json
