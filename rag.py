@@ -152,7 +152,7 @@ def extract_docx(path: Path) -> str:
     return clean_text("\n".join(parts))
 
 
-def extract_doc_with_textutil(path: Path) -> str:
+def extract_doc(path: Path) -> str:
     """Extract .doc text — mammoth (cross-platform) with macOS textutil as fallback."""
     try:
         import mammoth
@@ -162,7 +162,7 @@ def extract_doc_with_textutil(path: Path) -> str:
             return clean_text(result.value)
     except Exception:
         pass
-    # macOS fallback
+    # macOS-only fallback (not available in Docker/Linux)
     import platform
     if platform.system() == "Darwin":
         with tempfile.TemporaryDirectory() as td:
@@ -216,7 +216,7 @@ def extract_text(path: Path) -> str:
     if ext == ".docx":
         return extract_docx(path)
     if ext == ".doc":
-        return extract_doc_with_textutil(path)
+        return extract_doc(path)
     if ext in {".xlsx", ".xls", ".xlsm", ".ods"}:
         return extract_spreadsheet(path)
     if ext == ".csv":
@@ -249,7 +249,7 @@ def chunk_text(text: str, max_chars: int = 1200, overlap: int = 0) -> list[str]:
     prev_tail = ""
     for c in chunks:
         out.append((prev_tail + "\n" + c).strip() if prev_tail else c)
-        prev_tail = c[-overlap:]
+        prev_tail = c[-overlap:] if overlap > 0 else ""
     return out
 
 
@@ -526,19 +526,6 @@ def extract_image_text(image_bytes: bytes) -> str:
         return clean_text(getattr(resp, "text", "") or "")
     except Exception:
         return ""
-
-
-def _hits_are_relevant(query: str, hits: list[SearchHit]) -> bool:
-    """Check if top hits actually contain query terms (prevent hallucination on empty results)."""
-    if not hits:
-        return False
-    query_terms = [t for t in re.findall(r"[一-鿿]{2,}|[A-Za-z0-9]{2,}", query) if len(t) >= 2]
-    if not query_terms:
-        return True
-    top_content = " ".join(h.content + " " + h.file_name for h in hits[:3])
-    matched = sum(1 for t in query_terms if t in top_content)
-    # Require at least 1 meaningful term to match
-    return matched >= 1 and hits[0].score < 0  # bm25 negative = matched; score=0.0 means fallback LIKE hit
 
 
 def llm_answer(query: str, hits: list[SearchHit], history: list[tuple[str, str]] | None = None) -> str | None:

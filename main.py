@@ -2,6 +2,7 @@ import os
 import threading
 import traceback
 from collections import defaultdict
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -25,6 +26,7 @@ import rag
 
 # 每個 LINE 用戶的對話記憶（最近 5 輪）
 _CHAT_HISTORY: dict[str, list[tuple[str, str]]] = defaultdict(list)
+_HISTORY_LOCK = threading.Lock()
 _HISTORY_MAX = 5
 
 load_dotenv()
@@ -40,7 +42,14 @@ DRIVE_FOLDER_URL = os.getenv("DRIVE_FOLDER_URL", f"{PUBLIC_BASE_URL}/health")
 if not LINE_CHANNEL_SECRET or not LINE_CHANNEL_ACCESS_TOKEN:
     raise RuntimeError("LINE_CHANNEL_SECRET and LINE_CHANNEL_ACCESS_TOKEN are required")
 
-app = FastAPI(title=f"{UNIT_NAME}行政小秘書 LINE Bot", version="0.2.0")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    rag.reindex_all(force=False)
+    yield
+
+
+app = FastAPI(title=f"{UNIT_NAME}行政小秘書 LINE Bot", version="0.2.0", lifespan=lifespan)
 configuration = Configuration(access_token=LINE_CHANNEL_ACCESS_TOKEN)
 handler = WebhookHandler(LINE_CHANNEL_SECRET)
 
@@ -224,18 +233,15 @@ Drive 同步失敗：{e}
 
     # General query: Codex-first test mode with conversation memory.
     # Keep slash/system commands above deterministic; all normal questions go through Codex.
-    history = _CHAT_HISTORY.get(user_id, []) if user_id else []
+    with _HISTORY_LOCK:
+        history = list(_CHAT_HISTORY.get(user_id, [])) if user_id else []
     reply = rag.codex_answer(text, history=history) or rag.answer(text, history=history)
     if user_id:
-        _CHAT_HISTORY[user_id].append((text, reply))
-        if len(_CHAT_HISTORY[user_id]) > _HISTORY_MAX:
-            _CHAT_HISTORY[user_id] = _CHAT_HISTORY[user_id][-_HISTORY_MAX:]
+        with _HISTORY_LOCK:
+            _CHAT_HISTORY[user_id].append((text, reply))
+            if len(_CHAT_HISTORY[user_id]) > _HISTORY_MAX:
+                _CHAT_HISTORY[user_id] = _CHAT_HISTORY[user_id][-_HISTORY_MAX:]
     return reply, True
-
-
-@app.on_event("startup")
-def startup_index() -> None:
-    rag.reindex_all(force=False)
 
 
 @app.get("/", response_class=PlainTextResponse)
@@ -367,12 +373,14 @@ def handle_image_message(event: MessageEvent) -> None:
             return
         # Use extracted text as query; Codex-first test mode.
         query = f"（圖片辨識內容）{extracted[:300]}"
-        history = _CHAT_HISTORY.get(user_id, []) if user_id else []
+        with _HISTORY_LOCK:
+            history = list(_CHAT_HISTORY.get(user_id, [])) if user_id else []
         reply_text = rag.codex_answer(extracted, history=history) or rag.answer(extracted, history=history)
         if user_id:
-            _CHAT_HISTORY[user_id].append((query, reply_text))
-            if len(_CHAT_HISTORY[user_id]) > _HISTORY_MAX:
-                _CHAT_HISTORY[user_id] = _CHAT_HISTORY[user_id][-_HISTORY_MAX:]
+            with _HISTORY_LOCK:
+                _CHAT_HISTORY[user_id].append((query, reply_text))
+                if len(_CHAT_HISTORY[user_id]) > _HISTORY_MAX:
+                    _CHAT_HISTORY[user_id] = _CHAT_HISTORY[user_id][-_HISTORY_MAX:]
         _do_reply(event, reply_text, True, card_title="圖片文件查詢")
     except Exception:
         traceback.print_exc()
