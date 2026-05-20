@@ -13,13 +13,10 @@ from googleapiclient.http import MediaIoBaseDownload
 
 logger = logging.getLogger(__name__)
 
-SA_KEY_PATH = Path(os.getenv(
-    "GOOGLE_SA_KEY",
-    "/Users/leifhuang/TradingAgents-CN/config/google_service_account.json"
-))
-FOLDER_ID = os.getenv("DRIVE_FOLDER_ID", "1NchGIWpjtPPs96mOtxM2uUSFDYmuawKa")
+SA_KEY_PATH = Path(os.getenv("GOOGLE_SA_KEY", "/app/credentials/service-account.json"))
+FOLDER_ID = os.getenv("DRIVE_FOLDER_ID", "")
 SCOPES = ["https://www.googleapis.com/auth/drive.readonly"]
-MANIFEST_PATH = Path(os.getenv("DRIVE_MANIFEST_PATH", "/Users/leifhuang/sec2-linebot/data/drive_manifest.json"))
+MANIFEST_PATH = Path(os.getenv("DRIVE_MANIFEST_PATH", "/app/data/drive_manifest.json"))
 
 SUPPORTED_MIMES = {
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document": ".docx",
@@ -42,6 +39,8 @@ GOOGLE_EXPORT_MIMES = {
 
 
 def _build_service():
+    if not SA_KEY_PATH.exists():
+        raise FileNotFoundError(f"Google Service Account JSON 不存在：{SA_KEY_PATH}")
     creds = service_account.Credentials.from_service_account_file(
         str(SA_KEY_PATH), scopes=SCOPES
     )
@@ -51,6 +50,8 @@ def _build_service():
 def list_folder(folder_id: str | None = None) -> list[dict]:
     """List all files in the folder (non-recursive for now)."""
     fid = folder_id or FOLDER_ID
+    if not fid:
+        raise RuntimeError("DRIVE_FOLDER_ID is required")
     service = _build_service()
     results = []
     page_token = None

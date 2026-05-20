@@ -720,7 +720,7 @@ def codex_answer(query: str, history: list[tuple[str, str]] | None = None) -> st
     This intentionally lets Codex inspect the project/data folder in read-only mode.
     Returns None on failure so the caller can fall back to the normal RAG path.
     """
-    codex_bin = os.getenv("CODEX_BIN", "/opt/homebrew/bin/codex")
+    codex_bin = os.getenv("CODEX_BIN", "codex")
     model = os.getenv("CODEX_MODEL", "gpt-5.4")
     timeout = int(os.getenv("CODEX_TIMEOUT", "150"))
     history_block = ""

@@ -30,16 +30,17 @@ _HISTORY_MAX = 5
 load_dotenv()
 
 BOT_DISPLAY_NAME = os.getenv("BOT_DISPLAY_NAME", "二大隊行政小秘書")
+UNIT_NAME = os.getenv("UNIT_NAME", "第二救災救護大隊")
 LINE_CHANNEL_SECRET = os.getenv("LINE_CHANNEL_SECRET", "")
 LINE_CHANNEL_ACCESS_TOKEN = os.getenv("LINE_CHANNEL_ACCESS_TOKEN", "")
-PUBLIC_BASE_URL = os.getenv("PUBLIC_BASE_URL", "https://linebot.tfd-train.com").rstrip("/")
+PUBLIC_BASE_URL = os.getenv("PUBLIC_BASE_URL", "http://localhost:3002").rstrip("/")
 ADMIN_TOKEN = os.getenv("ADMIN_TOKEN", "")
 DRIVE_FOLDER_URL = os.getenv("DRIVE_FOLDER_URL", f"{PUBLIC_BASE_URL}/health")
 
 if not LINE_CHANNEL_SECRET or not LINE_CHANNEL_ACCESS_TOKEN:
     raise RuntimeError("LINE_CHANNEL_SECRET and LINE_CHANNEL_ACCESS_TOKEN are required")
 
-app = FastAPI(title="第二大隊行政小秘書 LINE Bot", version="0.2.0")
+app = FastAPI(title=f"{UNIT_NAME}行政小秘書 LINE Bot", version="0.2.0")
 configuration = Configuration(access_token=LINE_CHANNEL_ACCESS_TOKEN)
 handler = WebhookHandler(LINE_CHANNEL_SECRET)
 
@@ -79,7 +80,7 @@ def make_summary_card(query: str, reply_text: str = "") -> FlexMessage:
             "layout": "vertical",
             "spacing": "md",
             "contents": [
-                {"type": "text", "text": "👩‍💼 二大隊行政小秘書", "weight": "bold", "size": "lg", "color": "#1F4E79"},
+                {"type": "text", "text": f"👩‍💼 {BOT_DISPLAY_NAME}", "weight": "bold", "size": "lg", "color": "#1F4E79"},
                 {"type": "text", "text": "📝 深度報告摘要", "weight": "bold", "size": "md", "color": "#333333"},
                 {"type": "separator"},
                 {"type": "text", "text": title, "wrap": True, "size": "md", "weight": "bold"},
@@ -99,7 +100,7 @@ def make_summary_card(query: str, reply_text: str = "") -> FlexMessage:
             ],
         },
     }
-    return FlexMessage(alt_text=f"二大隊行政小秘書：{title}", contents=FlexContainer.from_dict(bubble))
+    return FlexMessage(alt_text=f"{BOT_DISPLAY_NAME}：{title}", contents=FlexContainer.from_dict(bubble))
 
 
 def split_line_messages(text: str, limit: int = 4800, max_parts: int = 5) -> list[TextMessage]:
@@ -239,12 +240,12 @@ def startup_index() -> None:
 
 @app.get("/", response_class=PlainTextResponse)
 def health() -> str:
-    return "ok - 第二大隊行政小秘書 LINE Bot"
+    return f"ok - {UNIT_NAME}行政小秘書 LINE Bot"
 
 
 @app.get("/health")
 def health_json() -> dict:
-    return {"status": "ok", "service": "第二大隊行政小秘書 LINE Bot", "webhook": f"{PUBLIC_BASE_URL}/webhook", **rag.stats()}
+    return {"status": "ok", "service": f"{UNIT_NAME}行政小秘書 LINE Bot", "webhook": f"{PUBLIC_BASE_URL}/webhook", **rag.stats()}
 
 
 @app.post("/admin/reindex")

@@ -1,4 +1,6 @@
-#!/bin/zsh
+#!/usr/bin/env bash
 set -euo pipefail
-cd /Users/leifhuang/sec2-linebot
-exec /Users/leifhuang/sec2-linebot/.venv/bin/uvicorn main:app --host 127.0.0.1 --port 3002
+cd "$(dirname "$0")"
+
+# Legacy alias retained for compatibility. Docker-only 主流程請使用 ./start.sh。
+exec ./start.sh

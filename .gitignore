@@ -1,7 +1,9 @@
 # 環境設定（含機密）
 .env
+.env.backup.*
 *.json
 !.env.example
+INSTALL_SUMMARY.txt
 
 # 資料（各單位自行 /同步 下載）
 data/raw/
@@ -17,6 +19,9 @@ __pycache__/
 
 # 日誌
 logs/
+
+# Docker 安裝精靈會複製 Service Account 到此資料夾
+credentials/
 
 # macOS
 .DS_Store

@@ -1,0 +1,27 @@
+services:
+  linebot-secretary:
+    build: .
+    container_name: linebot-secretary
+    restart: unless-stopped
+    ports:
+      - "3002:3002"
+    env_file:
+      - .env
+    environment:
+      DATA_DIR: /app/data
+      GOOGLE_SA_KEY: /app/credentials/service-account.json
+      DRIVE_MANIFEST_PATH: /app/data/drive_manifest.json
+      CODEX_BIN: codex
+    volumes:
+      - ./credentials:/app/credentials:ro
+      - ./data:/app/data
+      - ./logs:/app/logs
+      # 若使用 Codex OAuth 登入而非 OPENAI_API_KEY，可保留此掛載。
+      # 沒有 ~/.codex 也不影響；Docker Compose 會自動建立空資料夾。
+      - ${HOME}/.codex:/root/.codex:ro
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:3002/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s

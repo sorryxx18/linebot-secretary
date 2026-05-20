@@ -1,17 +1,16 @@
 @echo off
 chcp 65001 >nul
 echo ============================================================
-echo  行政小秘書 LINE Bot 啟動中...
+echo  LINE 行政小秘書啟動說明
 echo ============================================================
-
-:: 啟動 Cloudflare Tunnel（背景）
-start "Cloudflare Tunnel" /min cloudflared.exe tunnel --url http://localhost:3002
-
-:: 等候 Tunnel 建立
-timeout /t 3 /nobreak >nul
-
-:: 啟動 LINE Bot 服務
-echo [啟動] LINE Bot 服務 port 3002
-.venv\Scripts\uvicorn main:app --host 127.0.0.1 --port 3002
-
+echo.
+echo 本專案目前採 Docker-only 主流程。
+echo 請於 macOS/Linux/WSL2 終端機執行：
+echo.
+echo   ./start.sh
+echo.
+echo 或直接：
+echo.
+echo   docker compose up -d --build
+echo.
 pause
