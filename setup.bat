@@ -9,30 +9,65 @@ echo.
 
 :: ── 1. 檢查 Docker Desktop ─────────────────────────────────────
 echo [1/3] 檢查 Docker Desktop...
-docker info >nul 2>&1
+
+where docker >nul 2>&1
 if errorlevel 1 (
     echo.
-    echo [錯誤] Docker Desktop 未啟動或未安裝。
-    echo 請先安裝並啟動 Docker Desktop，再重新執行本程式：
-    echo   https://www.docker.com/products/docker-desktop
+    echo [未安裝] 偵測不到 Docker，正在開啟 Docker Desktop 下載頁面...
+    echo 請下載並安裝 Docker Desktop，完成後重新執行本程式。
     echo.
+    powershell -Command "Start-Process 'https://www.docker.com/products/docker-desktop'"
     pause
     exit /b 1
 )
-echo [OK] Docker Desktop 可用
+
+docker info >nul 2>&1
+if errorlevel 1 (
+    echo.
+    echo [未啟動] Docker Desktop 已安裝但尚未啟動。
+    echo 請先開啟 Docker Desktop，等待它完全啟動後再重新執行本程式。
+    echo.
+    :: 嘗試自動啟動 Docker Desktop
+    set DOCKER_APP="%ProgramFiles%\Docker\Docker\Docker Desktop.exe"
+    if exist !DOCKER_APP! (
+        echo 正在自動啟動 Docker Desktop，請稍候...
+        start "" !DOCKER_APP!
+        echo.
+        echo 請等待 Docker Desktop 完全就緒（系統匣出現鯨魚圖示）後，
+        echo 再重新執行本程式。
+    )
+    pause
+    exit /b 1
+)
+echo [OK] Docker Desktop 已啟動
 
 :: ── 2. 檢查 WSL2 ───────────────────────────────────────────────
 echo [2/3] 檢查 WSL2...
+
 wsl --status >nul 2>&1
 if errorlevel 1 (
     echo.
-    echo [錯誤] 未偵測到 WSL2。
-    echo 請以系統管理員身份開啟 PowerShell 並執行：
-    echo   wsl --install
-    echo 完成後重新開機，再重新執行本程式。
+    echo [未安裝] 偵測不到 WSL2。
     echo.
-    pause
-    exit /b 1
+    set /p INSTALL_WSL="是否立即以系統管理員身份安裝 WSL2？(Y/n): "
+    set INSTALL_WSL=!INSTALL_WSL!
+    if "!INSTALL_WSL!"=="" set INSTALL_WSL=Y
+    if /i "!INSTALL_WSL!"=="Y" (
+        echo.
+        echo 正在以系統管理員身份執行 wsl --install，完成後需重新開機...
+        powershell -Command "Start-Process powershell -ArgumentList '-NoProfile -Command wsl --install' -Verb RunAs -Wait"
+        echo.
+        echo WSL2 安裝完成，請重新開機後再次執行本程式。
+        pause
+        exit /b 0
+    ) else (
+        echo.
+        echo 請以系統管理員身份開啟 PowerShell 並手動執行：
+        echo   wsl --install
+        echo 完成後重新開機，再重新執行本程式。
+        pause
+        exit /b 1
+    )
 )
 echo [OK] WSL2 可用
 
