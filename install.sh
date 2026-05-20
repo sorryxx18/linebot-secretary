@@ -177,31 +177,32 @@ mkdir -p credentials data/raw data/extracted logs
 cp "$SERVICE_ACCOUNT_SOURCE" credentials/service-account.json
 chmod 600 credentials/service-account.json 2>/dev/null || true
 
-cat > .env <<EOF
-UNIT_NAME=${UNIT_NAME}
-UNIT_SHORT_NAME=${UNIT_SHORT_NAME}
-BOT_DISPLAY_NAME=${BOT_DISPLAY_NAME}
-
-LINE_CHANNEL_SECRET=${LINE_CHANNEL_SECRET}
-LINE_CHANNEL_ACCESS_TOKEN=${LINE_CHANNEL_ACCESS_TOKEN}
-
-OPENAI_API_KEY=${OPENAI_API_KEY}
-CODEX_MODEL=gpt-5.4
-CODEX_TIMEOUT=150
-
-GOOGLE_API_KEY=${GOOGLE_API_KEY}
-GEMINI_MODEL=gemini-2.5-flash
-
-GOOGLE_SA_KEY=/app/credentials/service-account.json
-DRIVE_FOLDER_ID=${DRIVE_FOLDER_ID}
-DRIVE_MANIFEST_PATH=/app/data/drive_manifest.json
-
-PUBLIC_BASE_URL=${PUBLIC_BASE_URL}
-DRIVE_FOLDER_URL=${DRIVE_FOLDER_URL}
-DATA_DIR=/app/data
-
-ADMIN_TOKEN=${ADMIN_TOKEN}
-EOF
+# 用 printf 逐行寫入，避免 heredoc 展開 $ 導致含特殊字符的 token 被破壞
+{
+  printf 'UNIT_NAME=%s\n'                 "$UNIT_NAME"
+  printf 'UNIT_SHORT_NAME=%s\n'           "$UNIT_SHORT_NAME"
+  printf 'BOT_DISPLAY_NAME=%s\n'          "$BOT_DISPLAY_NAME"
+  printf '\n'
+  printf 'LINE_CHANNEL_SECRET=%s\n'       "$LINE_CHANNEL_SECRET"
+  printf 'LINE_CHANNEL_ACCESS_TOKEN=%s\n' "$LINE_CHANNEL_ACCESS_TOKEN"
+  printf '\n'
+  printf 'OPENAI_API_KEY=%s\n'            "$OPENAI_API_KEY"
+  printf 'CODEX_MODEL=gpt-5.4\n'
+  printf 'CODEX_TIMEOUT=150\n'
+  printf '\n'
+  printf 'GOOGLE_API_KEY=%s\n'            "$GOOGLE_API_KEY"
+  printf 'GEMINI_MODEL=gemini-2.5-flash\n'
+  printf '\n'
+  printf 'GOOGLE_SA_KEY=/app/credentials/service-account.json\n'
+  printf 'DRIVE_FOLDER_ID=%s\n'           "$DRIVE_FOLDER_ID"
+  printf 'DRIVE_MANIFEST_PATH=/app/data/drive_manifest.json\n'
+  printf '\n'
+  printf 'PUBLIC_BASE_URL=%s\n'           "$PUBLIC_BASE_URL"
+  printf 'DRIVE_FOLDER_URL=%s\n'          "$DRIVE_FOLDER_URL"
+  printf 'DATA_DIR=/app/data\n'
+  printf '\n'
+  printf 'ADMIN_TOKEN=%s\n'               "$ADMIN_TOKEN"
+} > .env
 chmod 600 .env 2>/dev/null || true
 ok "已產生 .env、credentials/、data/、logs/"
 
@@ -233,14 +234,14 @@ START_NOW="${START_NOW:-Y}"
 if [[ "$START_NOW" =~ ^[Yy]$ ]]; then
   compose up -d --build
   say ""
-  say "等待健康檢查..."
-  for i in {1..30}; do
+  say "等待健康檢查（最多 120 秒）..."
+  for i in {1..60}; do
     if curl -fsS http://localhost:3002/health >/dev/null 2>&1; then
       ok "服務已啟動：http://localhost:3002/health"
       break
     fi
     sleep 2
-    if [[ "$i" == "30" ]]; then
+    if [[ "$i" == "60" ]]; then
       warn "服務尚未通過健康檢查，請執行：docker compose logs -f"
     fi
   done

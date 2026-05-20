@@ -19,11 +19,32 @@
 
 ## 一鍵安裝
 
+### macOS / Linux
+
 ```bash
 git clone https://github.com/sorryxx18/linebot-secretary.git
 cd linebot-secretary
 ./install.sh
 ```
+
+### Windows
+
+> **前置需求**：Docker Desktop + WSL2（見下方說明）
+
+1. 以系統管理員身份開啟 PowerShell，啟用 WSL2：
+   ```powershell
+   wsl --install
+   ```
+   完成後重新開機。
+
+2. 開啟 Docker Desktop → Settings → Resources → WSL Integration，啟用 WSL2 backend。
+
+3. 下載或 `git clone` 本專案到任意資料夾。
+
+4. 在專案資料夾中，**雙擊 `setup.bat`** 即可一鍵安裝。
+   - 程式會自動檢查 Docker Desktop 與 WSL2 是否就緒
+   - 確認後自動在 WSL2 中執行 `install.sh`
+   - 請依畫面提示輸入 LINE / Google / OpenAI 等憑證
 
 安裝程式會引導您填入必要資料、產生 `.env`、複製 Google Service Account JSON、建立資料夾，並使用 Docker Compose 啟動服務。
 
@@ -66,10 +87,24 @@ codex --version
 
 ## 常用指令
 
+**macOS / Linux（WSL2 終端機）：**
+
 ```bash
 ./start.sh    # 建置並啟動 Docker 服務
 ./stop.sh     # 停止服務
 ./status.sh   # 查看容器與健康檢查
+```
+
+**Windows（在 WSL2 終端機執行，或直接用 Docker Desktop 介面）：**
+
+```powershell
+# 啟動
+wsl bash -c "cd /path/to/linebot-secretary && ./start.sh"
+
+# 或直接用 docker compose（在 CMD / PowerShell 均可）
+docker compose up -d --build
+docker compose down
+docker compose logs -f
 ```
 
 查看 log：
