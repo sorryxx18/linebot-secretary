@@ -1,0 +1,11 @@
+# 強制 shell script 使用 LF 行尾，防止 Windows clone 後變成 CRLF
+# 導致在 WSL2 / Docker 執行時出現 \r: command not found
+*.sh    text eol=lf
+*.bat   text eol=crlf
+*.py    text eol=lf
+*.md    text eol=lf
+*.yml   text eol=lf
+*.yaml  text eol=lf
+*.txt   text eol=lf
+*.env*  text eol=lf
+Dockerfile text eol=lf

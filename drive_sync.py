@@ -104,9 +104,8 @@ def write_manifest(files: list[dict], path: Path = MANIFEST_PATH) -> None:
     path.write_text(json.dumps({"folder_id": FOLDER_ID, "files": items}, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
-def download_file(file_meta: dict, dest_dir: Path) -> Path | None:
+def download_file(service, file_meta: dict, dest_dir: Path) -> Path | None:
     """Download a single Drive file to dest_dir. Returns saved path or None."""
-    service = _build_service()
     fid = file_meta["id"]
     name = file_meta["name"]
     mime = file_meta.get("mimeType", "")
@@ -141,6 +140,8 @@ def download_file(file_meta: dict, dest_dir: Path) -> Path | None:
 def sync_folder(dest_dir: Path, folder_id: str | None = None) -> dict:
     """Download all supported files from Drive folder to dest_dir."""
     dest_dir.mkdir(parents=True, exist_ok=True)
+    # Build service once and reuse across all downloads
+    service = _build_service()
     files = list_folder(folder_id)
     write_manifest(files)
     downloaded = []
@@ -149,7 +150,7 @@ def sync_folder(dest_dir: Path, folder_id: str | None = None) -> dict:
 
     for f in files:
         try:
-            path = download_file(f, dest_dir)
+            path = download_file(service, f, dest_dir)
             if path:
                 downloaded.append(f["name"])
             else:
