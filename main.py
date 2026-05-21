@@ -55,7 +55,10 @@ handler = WebhookHandler(LINE_CHANNEL_SECRET)
 
 
 def check_admin(x_admin_token: str | None) -> None:
-    if ADMIN_TOKEN and x_admin_token != ADMIN_TOKEN:
+    # Always require token — never allow access when ADMIN_TOKEN is unset
+    if not ADMIN_TOKEN:
+        raise HTTPException(status_code=503, detail="ADMIN_TOKEN not configured")
+    if x_admin_token != ADMIN_TOKEN:
         raise HTTPException(status_code=401, detail="admin token required")
 
 
@@ -260,6 +263,9 @@ def admin_reindex(x_admin_token: str | None = Header(default=None)) -> dict:
     return rag.reindex_all(force=True)
 
 
+MAX_UPLOAD_BYTES = 50 * 1024 * 1024  # 50 MB
+
+
 @app.post("/admin/upload")
 async def admin_upload(file: UploadFile = File(...), x_admin_token: str | None = Header(default=None)) -> dict:
     check_admin(x_admin_token)
@@ -269,7 +275,9 @@ async def admin_upload(file: UploadFile = File(...), x_admin_token: str | None =
         raise HTTPException(status_code=400, detail=f"unsupported file type: {suffix}")
     rag.ensure_dirs()
     target = rag.RAW_DIR / filename
-    content = await file.read()
+    content = await file.read(MAX_UPLOAD_BYTES + 1)
+    if len(content) > MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=413, detail="file too large (max 50 MB)")
     target.write_bytes(content)
     indexed, message = rag.index_file(target, force=True)
     return {"uploaded": str(target), "indexed": indexed, "message": message, **rag.stats()}
