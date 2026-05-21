@@ -17,36 +17,42 @@
 
 ---
 
-## 一鍵安裝
+## 一鍵安裝（Windows）
 
-### macOS / Linux
+> **本專案僅支援 Windows（Docker Desktop + WSL2）。**
 
-```bash
+### 前置需求
+
+1. **Docker Desktop**（[下載](https://www.docker.com/products/docker-desktop)）
+2. **WSL2**
+
+### 安裝步驟
+
+**Step 1：啟用 WSL2**（尚未安裝者）
+
+以系統管理員身份開啟 PowerShell：
+```powershell
+wsl --install
+```
+完成後重新開機。
+
+**Step 2：啟用 Docker Desktop WSL2 backend**
+
+Docker Desktop → Settings → Resources → WSL Integration → 啟用 WSL2 backend。
+
+**Step 3：下載專案**
+
+```powershell
 git clone https://github.com/sorryxx18/linebot-secretary.git
-cd linebot-secretary
-./install.sh
 ```
 
-### Windows
+**Step 4：雙擊 `setup.bat` 一鍵安裝**
 
-> **前置需求**：Docker Desktop + WSL2（見下方說明）
+- 自動檢查 Docker Desktop 與 WSL2 是否就緒，未安裝者會引導安裝
+- 自動在 WSL2 中執行安裝精靈
+- 依畫面提示輸入 LINE / Google / OpenAI 等憑證
 
-1. 以系統管理員身份開啟 PowerShell，啟用 WSL2：
-   ```powershell
-   wsl --install
-   ```
-   完成後重新開機。
-
-2. 開啟 Docker Desktop → Settings → Resources → WSL Integration，啟用 WSL2 backend。
-
-3. 下載或 `git clone` 本專案到任意資料夾。
-
-4. 在專案資料夾中，**雙擊 `setup.bat`** 即可一鍵安裝。
-   - 程式會自動檢查 Docker Desktop 與 WSL2 是否就緒
-   - 確認後自動在 WSL2 中執行 `install.sh`
-   - 請依畫面提示輸入 LINE / Google / OpenAI 等憑證
-
-安裝程式會引導您填入必要資料、產生 `.env`、複製 Google Service Account JSON、建立資料夾，並使用 Docker Compose 啟動服務。
+安裝程式會自動產生 `.env`、複製 Service Account JSON、建立資料夾，並啟動 Docker 服務。
 
 ---
 
@@ -87,30 +93,20 @@ codex --version
 
 ## 常用指令
 
-**macOS / Linux（WSL2 終端機）：**
-
-```bash
-./start.sh    # 建置並啟動 Docker 服務
-./stop.sh     # 停止服務
-./status.sh   # 查看容器與健康檢查
-```
-
-**Windows（在 WSL2 終端機執行，或直接用 Docker Desktop 介面）：**
+在 WSL2 終端機或 CMD / PowerShell 均可使用 docker compose 指令：
 
 ```powershell
-# 啟動
-wsl bash -c "cd /path/to/linebot-secretary && ./start.sh"
-
-# 或直接用 docker compose（在 CMD / PowerShell 均可）
-docker compose up -d --build
-docker compose down
-docker compose logs -f
+docker compose up -d --build   # 啟動
+docker compose down            # 停止
+docker compose logs -f         # 查看 log
 ```
 
-查看 log：
+或在 WSL2 終端機使用內建腳本：
 
 ```bash
-docker compose logs -f
+./start.sh    # 建置並啟動
+./stop.sh     # 停止
+./status.sh   # 查看狀態與健康檢查
 ```
 
 ---
