@@ -1,3 +1,4 @@
+import json
 import os
 import threading
 import traceback
@@ -38,6 +39,39 @@ LINE_CHANNEL_ACCESS_TOKEN = os.getenv("LINE_CHANNEL_ACCESS_TOKEN", "")
 PUBLIC_BASE_URL = os.getenv("PUBLIC_BASE_URL", "http://localhost:3002").rstrip("/")
 ADMIN_TOKEN = os.getenv("ADMIN_TOKEN", "")
 DRIVE_FOLDER_URL = os.getenv("DRIVE_FOLDER_URL", f"{PUBLIC_BASE_URL}/health")
+
+# ── 白名單 ──────────────────────────────────────────────────────────────────
+PASSPHRASE = "/tfdfire7236/"
+_ALLOWLIST_PATH = Path(os.getenv("DATA_DIR", "/app/data")) / "allowlist.json"
+_ALLOWLIST_LOCK = threading.Lock()
+
+
+def _load_allowlist() -> set[str]:
+    try:
+        if _ALLOWLIST_PATH.exists():
+            return set(json.loads(_ALLOWLIST_PATH.read_text(encoding="utf-8")))
+    except Exception:
+        pass
+    return set()
+
+
+def _save_allowlist(ids: set[str]) -> None:
+    _ALLOWLIST_PATH.parent.mkdir(parents=True, exist_ok=True)
+    _ALLOWLIST_PATH.write_text(
+        json.dumps(sorted(ids), ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+
+
+def _is_allowed(user_id: str) -> bool:
+    with _ALLOWLIST_LOCK:
+        return user_id in _load_allowlist()
+
+
+def _add_to_allowlist(user_id: str) -> None:
+    with _ALLOWLIST_LOCK:
+        ids = _load_allowlist()
+        ids.add(user_id)
+        _save_allowlist(ids)
 
 if not LINE_CHANNEL_SECRET or not LINE_CHANNEL_ACCESS_TOKEN:
     raise RuntimeError("LINE_CHANNEL_SECRET and LINE_CHANNEL_ACCESS_TOKEN are required")
@@ -136,7 +170,18 @@ def build_reply(user_text: str, user_id: str = "") -> tuple[str, bool]:
     """Return (reply_text, show_card). show_card=False for system commands."""
     text = (user_text or "").strip()
     if not text:
-        return "請輸入要查詢的議會備詢問題。", False
+        return "請輸入密語以啟用小秘書。", False
+
+    # ── 白名單驗證 ────────────────────────────────────────────────────────────
+    if text == PASSPHRASE:
+        if user_id and not _is_allowed(user_id):
+            _add_to_allowlist(user_id)
+            return f"✅ 已啟用{BOT_DISPLAY_NAME}服務。\n\n請直接輸入問題，例如：有什麼水源匱乏地區嗎", False
+        return f"您已在白名單中，{BOT_DISPLAY_NAME}已為您服務。", False
+
+    if user_id and not _is_allowed(user_id):
+        return f"請先輸入啟用密語以使用{BOT_DISPLAY_NAME}。", False
+    # ─────────────────────────────────────────────────────────────────────────
 
     if text in {"/狀態", "狀態", "status"}:
         s = rag.stats()
@@ -257,6 +302,24 @@ def health_json() -> dict:
     return {"status": "ok", "service": f"{UNIT_NAME}行政小秘書 LINE Bot", "webhook": f"{PUBLIC_BASE_URL}/webhook", **rag.stats()}
 
 
+@app.get("/admin/allowlist")
+def admin_allowlist(x_admin_token: str | None = Header(default=None)) -> dict:
+    check_admin(x_admin_token)
+    with _ALLOWLIST_LOCK:
+        ids = sorted(_load_allowlist())
+    return {"count": len(ids), "user_ids": ids}
+
+
+@app.delete("/admin/allowlist/{user_id}")
+def admin_allowlist_remove(user_id: str, x_admin_token: str | None = Header(default=None)) -> dict:
+    check_admin(x_admin_token)
+    with _ALLOWLIST_LOCK:
+        ids = _load_allowlist()
+        ids.discard(user_id)
+        _save_allowlist(ids)
+    return {"removed": user_id, "count": len(ids)}
+
+
 @app.post("/admin/reindex")
 def admin_reindex(x_admin_token: str | None = Header(default=None)) -> dict:
     check_admin(x_admin_token)
@@ -365,6 +428,9 @@ def handle_text_message(event: MessageEvent) -> None:
 @handler.add(MessageEvent, message=ImageMessageContent)
 def handle_image_message(event: MessageEvent) -> None:
     user_id = getattr(getattr(event, "source", None), "user_id", "") or ""
+    if user_id and not _is_allowed(user_id):
+        _do_reply(event, f"請先輸入啟用密語以使用{BOT_DISPLAY_NAME}。", False)
+        return
     try:
         with ApiClient(configuration) as api_client:
             line_bot_api = MessagingApi(api_client)

@@ -162,23 +162,87 @@ https://linebot.example.com/webhook
 
 ---
 
+## 使用者白名單
+
+本服務採用密語啟用機制，防止未授權人員使用 Bot。
+
+### 啟用方式
+
+用戶（個人或群組成員）在 LINE 傳送：
+
+```
+/tfdfire7236/
+```
+
+即可加入白名單，之後即可正常使用所有查詢功能。未加入白名單的用戶只會收到提示訊息。
+
+### 管理白名單（Admin API）
+
+```bash
+# 查看白名單
+curl -H "X-Admin-Token: <your_token>" http://localhost:3002/admin/allowlist
+
+# 移除某用戶
+curl -X DELETE -H "X-Admin-Token: <your_token>" http://localhost:3002/admin/allowlist/<user_id>
+```
+
+白名單儲存於 `data/allowlist.json`，容器重啟後保留。
+
+---
+
 ## 安全注意事項
+
+### 機密資料保護
 
 請勿提交下列資料到 GitHub：
 
-- `.env`
-- `.env.backup.*`
-- `credentials/`
-- `service-account.json`
-- LINE Channel Secret
-- LINE Channel Access Token
+- `.env`、`.env.backup.*`
+- `credentials/`、`service-account.json`
+- LINE Channel Secret / Access Token
 - OpenAI / Gemini API Key
-- 真實議員備詢資料
-- 實際問答紀錄
+- 真實議員備詢資料、實際問答紀錄
 - `data/raw/`、`data/extracted/`、`data/index.sqlite3`
 - `logs/`
 
 本 repo 僅保留 `.env.example` 與程式碼；實際機密資料由 `./install.sh` 在本機產生。
+
+### 資安設計說明
+
+| 項目 | 說明 |
+|------|------|
+| LINE Webhook 簽名驗證 | 每筆 Webhook 都驗證 X-Line-Signature |
+| 白名單機制 | 未啟用密語的用戶不會收到任何實質回覆 |
+| Admin 端點驗證 | 所有 `/admin/*` 必須附帶 X-Admin-Token |
+| 檔案上傳限制 | 最大 50 MB，僅允許指定文件格式 |
+| 路徑穿越防護 | 上傳檔名以 `Path.name` 截斷目錄部分 |
+| SQL Injection 防護 | 所有 SQLite 查詢皆使用參數化語句 |
+| 子程序注入防護 | Codex 呼叫使用 list 傳參，不使用 shell=True |
+
+---
+
+## 防火牆設定（消防單位 Windows 環境）
+
+### 出向連線需求（全部為 HTTPS port 443）
+
+| 目的地 | 用途 |
+|--------|------|
+| `api.line.me` | LINE Messaging API Webhook 回覆 |
+| `oauth2.googleapis.com` | Google Service Account 認證 |
+| `www.googleapis.com` / `drive.googleapis.com` | Google Drive 同步 |
+| `generativelanguage.googleapis.com` | Gemini API (RAG fallback) |
+| `api.openai.com` | Codex 深度回答 |
+| `hub.docker.com` / `registry-1.docker.io` | Docker image 下載（安裝時） |
+| `*.cloudflare.com` | Cloudflare Tunnel（若採用） |
+
+### 不需開放任何入向 port
+
+使用 Cloudflare Tunnel 時，所有連線由主機主動對外建立，無需在防火牆開放任何入向規則。
+
+### 內部 port
+
+| Port | 說明 |
+|------|------|
+| `3002` | Bot 服務（僅本機，透過 Tunnel 對外）|
 
 ---
 
@@ -214,7 +278,17 @@ Docker Compose 會掛載：
 
 ## LINE 指令
 
-在 LINE 對 Bot 傳送：
+### 啟用服務（首次必須）
+
+```text
+/tfdfire7236/
+```
+
+加入白名單，啟用後方可使用所有功能。群組與個人均需各自啟用。
+
+---
+
+### 一般指令
 
 ```text
 /狀態
