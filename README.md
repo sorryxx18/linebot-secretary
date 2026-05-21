@@ -1,274 +1,194 @@
 # LINE 行政小秘書
 
-本專案是「二大隊行政小秘書」的 Docker 一鍵安裝驗證版，目標是讓現行本地 LINE Bot 的使用效果可以被穩定重建、啟動與維護。待二大隊版本運行穩定後，再整理為其他單位推廣版。
+**第二救災救護大隊行政小秘書** — 協助依據 Google Drive 知識庫回覆議會備詢問題的 LINE Bot。
 
-預設效果包含：
-
-- LINE Messaging API webhook reply-only 回覆
-- Codex-first 深度回答模式
-- Gemini RAG fallback
-- Google Drive 知識庫同步與來源引用
-- 正式公務報告格式
+功能包含：
+- 議員備詢文件 RAG 查詢（Codex 深度回答 + Gemini 備援）
+- Google Drive 知識庫自動同步
+- 正式公務報告格式回覆
 - Flex 卡片摘要
-- 敏感資料保守處理
-- `/同步`、`/重建索引`、`/文件清單`、`/狀態` 等管理指令
+- 圖片文字辨識查詢
+- 白名單密語機制（防未授權使用）
+- 管理員 API
 
-> 注意：本專案不使用 LINE push message。所有 LINE 回覆均透過 webhook reply token 完成。
+> 本專案**僅支援 Windows（Docker Desktop + WSL2）**。
 
 ---
 
-## 一鍵安裝（Windows）
+## 安裝前準備
 
-> **本專案僅支援 Windows（Docker Desktop + WSL2）。**
+安裝前請先備妥以下帳號與資料，安裝精靈會逐項引導填入。
 
-### 前置需求
+### 一、申請 LINE Bot
 
-1. **Docker Desktop**（[下載](https://www.docker.com/products/docker-desktop)）
-2. **WSL2**
+1. 前往 [LINE Developers Console](https://developers.line.biz/console/)，登入後點 **Create a new provider**。
+2. 建立 Provider 後，點 **Create a new channel** → 選 **Messaging API**。
+3. 填入 Bot 名稱、類別，完成後進入 Channel 頁面。
+4. 在 **Basic settings** 頁籤，複製 **Channel secret**。
+5. 在 **Messaging API** 頁籤，點 **Issue** 產生 **Channel access token**，複製備用。
+6. 同頁面，**Auto-reply messages** 設為 **Disabled**。
 
-### 安裝步驟
+> Webhook URL 在安裝完成後再設定（需要公開 HTTPS 網址）。
 
-**Step 1：啟用 WSL2**（尚未安裝者）
+---
 
-以系統管理員身份開啟 PowerShell：
+### 二、建立 Google Service Account
+
+1. 前往 [Google Cloud Console](https://console.cloud.google.com/)，建立或選擇一個專案。
+2. 左側選單 → **IAM 與管理** → **服務帳戶** → **建立服務帳戶**。
+3. 填入名稱（如 `linebot-drive-reader`），點 **完成**，不需指派角色。
+4. 點進建立好的服務帳戶 → **金鑰** 頁籤 → **新增金鑰** → **JSON**。
+5. 下載的 `.json` 檔妥善保存，安裝時會要求輸入此檔案路徑。
+6. 啟用 **Google Drive API**：左側 → **API 和服務** → **已啟用的 API 和服務** → **啟用 API** → 搜尋「Google Drive API」並啟用。
+
+---
+
+### 三、準備 Google Drive 知識庫資料夾
+
+1. 在 Google Drive 建立一個資料夾，專門放議員備詢文件（.docx、.xlsx、.pdf 等）。
+2. 在資料夾上按右鍵 → **共用** → 輸入服務帳戶的 email（格式如 `xxx@your-project.iam.gserviceaccount.com`）→ 權限設為 **檢視者**。
+3. 複製資料夾的網址備用（格式如 `https://drive.google.com/drive/folders/xxxxxxxxxx`）。
+
+---
+
+### 四、取得 OpenAI API Key
+
+1. 前往 [platform.openai.com](https://platform.openai.com/api-keys)，登入後點 **Create new secret key**。
+2. 複製 API Key 備用（`sk-...`）。
+
+> 若無 OpenAI API Key，也可在安裝時留空，改用 `codex login` OAuth 方式。
+
+---
+
+### 五、取得 Gemini API Key
+
+1. 前往 [Google AI Studio](https://aistudio.google.com/app/apikey)。
+2. 點 **Create API key**，選擇 Google Cloud 專案後複製 Key。
+
+---
+
+### 六、設定公開 HTTPS 網址（Cloudflare Tunnel）
+
+LINE Webhook 必須使用 HTTPS 網址。建議使用 **Cloudflare Tunnel** 免費建立，不需申請網域或開放防火牆入向 port。
+
+1. 前往 [Cloudflare Zero Trust](https://one.dash.cloudflare.com/)，登入後點 **Networks → Tunnels → Create a tunnel**。
+2. 選 **Cloudflared**，輸入 Tunnel 名稱後下載 Windows 版 `cloudflared.exe`（或 Docker 版）。
+3. 依指示執行 `cloudflared.exe service install <token>` 完成安裝。
+4. 在 **Public Hostname** 設定：
+   - Subdomain：自訂（如 `linebot-sec2`）
+   - Domain：你的 Cloudflare 網域（或申請免費 `*.trycloudflare.com`）
+   - Service：`http://localhost:3002`
+5. 建立後取得公開網址，格式如 `https://linebot-sec2.example.com`，備用。
+
+> 若暫時沒有網址，安裝時可先留空，稍後再到 LINE Developers 設定 Webhook URL。
+
+---
+
+## 安裝步驟（Windows）
+
+### Step 1：安裝 Git for Windows
+
+前往 [git-scm.com](https://git-scm.com/download/win) 下載安裝，全部保持預設值即可。
+
+安裝完成後開啟 **命令提示字元（CMD）** 確認：
+```cmd
+git --version
+```
+
+---
+
+### Step 2：安裝 Docker Desktop
+
+1. 前往 [docker.com](https://www.docker.com/products/docker-desktop) 下載 Docker Desktop for Windows。
+2. 安裝時勾選 **Use WSL 2 instead of Hyper-V**（預設已勾選）。
+3. 安裝後重新開機，啟動 Docker Desktop，等待系統匣出現鯨魚圖示且狀態為 **Running**。
+
+---
+
+### Step 3：啟用 WSL2
+
+開啟 **Docker Desktop** → Settings → Resources → **WSL Integration** → 確認 WSL2 已啟用。
+
+若尚未安裝 WSL2，以**系統管理員**身份開啟 PowerShell 執行：
 ```powershell
 wsl --install
 ```
 完成後重新開機。
 
-**Step 2：啟用 Docker Desktop WSL2 backend**
+---
 
-Docker Desktop → Settings → Resources → WSL Integration → 啟用 WSL2 backend。
+### Step 4：下載本專案
 
-**Step 3：下載專案**
-
-```powershell
+開啟 CMD，切換到要放置專案的資料夾後執行：
+```cmd
 git clone https://github.com/sorryxx18/linebot-secretary.git
+cd linebot-secretary
 ```
-
-**Step 4：雙擊 `setup.bat` 一鍵安裝**
-
-- 自動檢查 Docker Desktop 與 WSL2 是否就緒，未安裝者會引導安裝
-- 自動在 WSL2 中執行安裝精靈
-- 依畫面提示輸入 LINE / Google / OpenAI 等憑證
-
-安裝程式會自動產生 `.env`、複製 Service Account JSON、建立資料夾，並啟動 Docker 服務。
 
 ---
 
-## 安裝前請先準備
+### Step 5：執行 setup.bat
 
-### 必要工具
+在專案資料夾中，**雙擊 `setup.bat`**（或在 CMD 輸入 `setup.bat`）。
 
-1. Git
-2. Docker Desktop
-3. Node.js / npm
-4. Codex CLI
+安裝精靈會依序引導您填入：
 
-Codex CLI 安裝方式：
+| 項目 | 說明 |
+|------|------|
+| 單位完整名稱 | 預設：第二救災救護大隊 |
+| 單位簡稱 | 預設：二大隊 |
+| Bot 名稱 | 預設：二大隊行政小秘書 |
+| LINE Channel Secret | 見「申請 LINE Bot」步驟 4 |
+| LINE Channel Access Token | 見「申請 LINE Bot」步驟 5 |
+| OpenAI API Key | 見「取得 OpenAI API Key」，可留空 |
+| Gemini API Key | 見「取得 Gemini API Key」|
+| Google Service Account JSON 路徑 | 下載的 .json 檔案完整路徑 |
+| Google Drive 資料夾 ID 或網址 | 見「準備 Drive 知識庫資料夾」步驟 3 |
+| 公開 HTTPS 網址 | 見「設定 Cloudflare Tunnel」步驟 5，可先留空 |
 
-```bash
-npm install -g @openai/codex
-codex --version
-```
+填寫完成後，安裝精靈會自動建置並啟動 Docker 服務。
 
-本版本先將 Codex CLI 列為必要工具，主要用於二大隊運行驗證、維護與除錯。之後對外推廣版可再降級為開發者選用。
+---
 
-### 必要資料
+### Step 6：設定 LINE Webhook URL
 
-安裝精靈會請您填入：
+1. 回到 [LINE Developers Console](https://developers.line.biz/console/)，進入你的 Channel。
+2. **Messaging API** 頁籤 → **Webhook URL** 填入：
+   ```
+   https://你的公開網址/webhook
+   ```
+3. 點 **Verify** 確認連線正常，再開啟 **Use webhook**。
 
-1. 單位完整名稱，預設：`第二救災救護大隊`
-2. 單位簡稱，預設：`二大隊`
-3. Bot 名稱，預設：`二大隊行政小秘書`
-4. LINE Channel Secret
-5. LINE Channel Access Token
-6. OpenAI API Key，供 Codex-first 回答使用；也可使用主機 `codex login` OAuth
-7. Gemini API Key，供 fallback RAG 回答使用
-8. Google Service Account JSON 檔案路徑
-9. Google Drive 知識庫資料夾 ID 或資料夾網址
-10. 公開 HTTPS 網址，可先留空，稍後再設定 Cloudflare Tunnel 或正式網域
+---
+
+### Step 7：上傳知識庫並啟用 Bot
+
+1. 將議員備詢文件（.docx、.xlsx、.pdf 等）上傳到 Google Drive 知識庫資料夾。
+2. 在 LINE 對 Bot 傳送：
+   ```
+   /同步
+   ```
+   Bot 會自動下載並建立索引。
+3. 傳送啟用密語加入白名單：
+   ```
+   /tfdfire7236/
+   ```
+4. 直接輸入問題測試，例如：
+   ```
+   有什麼水源匱乏地區嗎
+   ```
 
 ---
 
 ## 常用指令
 
-在 WSL2 終端機或 CMD / PowerShell 均可使用 docker compose 指令：
+在 CMD 或 PowerShell 執行：
 
 ```powershell
-docker compose up -d --build   # 啟動
+docker compose up -d --build   # 啟動（重建後啟動）
 docker compose down            # 停止
-docker compose logs -f         # 查看 log
+docker compose logs -f         # 查看即時 log
 ```
-
-或在 WSL2 終端機使用內建腳本：
-
-```bash
-./start.sh    # 建置並啟動
-./stop.sh     # 停止
-./status.sh   # 查看狀態與健康檢查
-```
-
----
-
-## LINE Developers 設定
-
-服務預設監聽本機：
-
-```text
-http://localhost:3002
-```
-
-Webhook path 固定為：
-
-```text
-/webhook
-```
-
-若您的公開網址是：
-
-```text
-https://linebot.example.com
-```
-
-請在 LINE Developers 後台填入：
-
-```text
-https://linebot.example.com/webhook
-```
-
-建議設定：
-
-- Use webhook：Enabled
-- Auto-reply messages：Disabled
-- Greeting messages：Optional
-
----
-
-## Google Drive 權限提醒
-
-安裝精靈會讀取 Service Account JSON 裡的 `client_email` 並提醒您將 Drive 知識庫資料夾分享給該帳號。
-
-請確認：
-
-1. Google Drive 知識庫資料夾已分享給 service account email
-2. 權限至少為 Viewer
-3. `.env` 的 `DRIVE_FOLDER_ID` 為正確資料夾 ID
-4. LINE 傳送 `/同步` 後，資料會下載到 `data/raw/` 並重建索引
-
----
-
-## 使用者白名單
-
-本服務採用密語啟用機制，防止未授權人員使用 Bot。
-
-### 啟用方式
-
-用戶（個人或群組成員）在 LINE 傳送：
-
-```
-/tfdfire7236/
-```
-
-即可加入白名單，之後即可正常使用所有查詢功能。未加入白名單的用戶只會收到提示訊息。
-
-### 管理白名單（Admin API）
-
-```bash
-# 查看白名單
-curl -H "X-Admin-Token: <your_token>" http://localhost:3002/admin/allowlist
-
-# 移除某用戶
-curl -X DELETE -H "X-Admin-Token: <your_token>" http://localhost:3002/admin/allowlist/<user_id>
-```
-
-白名單儲存於 `data/allowlist.json`，容器重啟後保留。
-
----
-
-## 安全注意事項
-
-### 機密資料保護
-
-請勿提交下列資料到 GitHub：
-
-- `.env`、`.env.backup.*`
-- `credentials/`、`service-account.json`
-- LINE Channel Secret / Access Token
-- OpenAI / Gemini API Key
-- 真實議員備詢資料、實際問答紀錄
-- `data/raw/`、`data/extracted/`、`data/index.sqlite3`
-- `logs/`
-
-本 repo 僅保留 `.env.example` 與程式碼；實際機密資料由 `./install.sh` 在本機產生。
-
-### 資安設計說明
-
-| 項目 | 說明 |
-|------|------|
-| LINE Webhook 簽名驗證 | 每筆 Webhook 都驗證 X-Line-Signature |
-| 白名單機制 | 未啟用密語的用戶不會收到任何實質回覆 |
-| Admin 端點驗證 | 所有 `/admin/*` 必須附帶 X-Admin-Token |
-| 檔案上傳限制 | 最大 50 MB，僅允許指定文件格式 |
-| 路徑穿越防護 | 上傳檔名以 `Path.name` 截斷目錄部分 |
-| SQL Injection 防護 | 所有 SQLite 查詢皆使用參數化語句 |
-| 子程序注入防護 | Codex 呼叫使用 list 傳參，不使用 shell=True |
-
----
-
-## 防火牆設定（消防單位 Windows 環境）
-
-### 出向連線需求（全部為 HTTPS port 443）
-
-| 目的地 | 用途 |
-|--------|------|
-| `api.line.me` | LINE Messaging API Webhook 回覆 |
-| `oauth2.googleapis.com` | Google Service Account 認證 |
-| `www.googleapis.com` / `drive.googleapis.com` | Google Drive 同步 |
-| `generativelanguage.googleapis.com` | Gemini API (RAG fallback) |
-| `api.openai.com` | Codex 深度回答 |
-| `hub.docker.com` / `registry-1.docker.io` | Docker image 下載（安裝時） |
-| `*.cloudflare.com` | Cloudflare Tunnel（若採用） |
-
-### 不需開放任何入向 port
-
-使用 Cloudflare Tunnel 時，所有連線由主機主動對外建立，無需在防火牆開放任何入向規則。
-
-### 內部 port
-
-| Port | 說明 |
-|------|------|
-| `3002` | Bot 服務（僅本機，透過 Tunnel 對外）|
-
----
-
-## Docker 結構
-
-主要檔案：
-
-```text
-Dockerfile
-docker-compose.yml
-install.sh
-start.sh
-stop.sh
-status.sh
-.env.example
-main.py
-rag.py
-drive_sync.py
-```
-
-Docker Compose 會掛載：
-
-```text
-./credentials -> /app/credentials:ro
-./data        -> /app/data
-./logs        -> /app/logs
-~/.codex      -> /root/.codex:ro
-```
-
-若 `.env` 已填 `OPENAI_API_KEY`，Codex 可直接使用 API key；若留空，容器會嘗試使用主機掛載的 `~/.codex` OAuth 狀態。
 
 ---
 
@@ -276,7 +196,7 @@ Docker Compose 會掛載：
 
 ### 啟用服務（首次必須）
 
-```text
+```
 /tfdfire7236/
 ```
 
@@ -286,39 +206,96 @@ Docker Compose 會掛載：
 
 ### 一般指令
 
-```text
-/狀態
-```
-
-查看資料庫狀態。
-
-```text
-/同步
-```
-
-從 Google Drive 下載最新文件並重建索引。
-
-```text
-/重建索引
-```
-
-重新掃描 `data/raw/` 建立索引。
-
-```text
-/文件清單
-```
-
-查看已索引文件。
+| 指令 | 功能 |
+|------|------|
+| `/同步` | 從 Google Drive 下載最新文件並重建索引 |
+| `/重建索引` | 重新掃描 data/raw/ 建立索引（不重新下載）|
+| `/文件清單` | 查看已索引文件列表 |
+| `/狀態` | 查看資料庫狀態與 Webhook 網址 |
+| `/說明` | 顯示使用說明 |
+| 直接輸入問題 | AI 查詢議員備詢資料庫 |
+| 傳送圖片 | 自動辨識文字並查詢 |
 
 ---
 
-## 目前版本定位
+## 使用者白名單
 
-目前版本先以「二大隊行政小秘書」運行穩定為優先，因此：
+本服務採用密語啟用機制，防止未授權人員使用。
 
-- 採 Docker-only 安裝
-- 採 Codex-first 回答模式
-- 預設二大隊正式公務回覆格式
-- 其他單位可透過安裝精靈替換單位名稱、LINE 憑證與 Drive 知識庫
+- 用戶傳送 `/tfdfire7236/` → 加入白名單，回覆啟用成功
+- 未啟用者所有訊息均只收到提示，不觸發查詢
 
-後續推廣版可再移除 Codex 必要性、增加更多安裝模式與更完整的客製化設定。
+### 管理白名單（Admin API）
+
+```bash
+# 查看白名單（在 WSL2 或 CMD 執行）
+curl -H "X-Admin-Token: <ADMIN_TOKEN>" http://localhost:3002/admin/allowlist
+
+# 移除某用戶
+curl -X DELETE -H "X-Admin-Token: <ADMIN_TOKEN>" http://localhost:3002/admin/allowlist/<user_id>
+```
+
+`ADMIN_TOKEN` 在安裝時自動產生，儲存於 `.env`。
+
+---
+
+## 防火牆設定
+
+### 出向連線需求（全部為 HTTPS port 443）
+
+| 目的地 | 用途 |
+|--------|------|
+| `api.line.me` | LINE Messaging API |
+| `oauth2.googleapis.com` | Google 認證 |
+| `www.googleapis.com` / `drive.googleapis.com` | Google Drive 同步 |
+| `generativelanguage.googleapis.com` | Gemini API |
+| `api.openai.com` | Codex 深度回答 |
+| `hub.docker.com` / `registry-1.docker.io` | Docker image（安裝時）|
+| `*.cloudflare.com` | Cloudflare Tunnel |
+
+### 不需開放任何入向 port
+
+使用 Cloudflare Tunnel 時，所有連線由主機主動對外建立，**防火牆不需新增任何入向規則**。
+
+---
+
+## 安全注意事項
+
+請勿將下列資料提交到 GitHub 或傳送給他人：
+
+- `.env`（含所有 API Key 和 Token）
+- `credentials/`（Service Account JSON）
+- `data/raw/`（議員備詢原始文件）
+
+以上均已在 `.gitignore` 中排除，安裝時由本機產生，不會上傳。
+
+### 資安設計說明
+
+| 項目 | 說明 |
+|------|------|
+| LINE Webhook 簽名驗證 | 每筆請求驗證 X-Line-Signature，防偽造 |
+| 白名單機制 | 未啟用密語的用戶不觸發任何查詢 |
+| Admin 端點驗證 | 所有 `/admin/*` 必須附帶 X-Admin-Token |
+| 檔案上傳限制 | 最大 50 MB，僅允許指定格式 |
+| SQL Injection 防護 | 所有 SQLite 查詢使用參數化語句 |
+
+---
+
+## 問題排除
+
+**Bot 沒有回應**
+- 確認 Docker 容器正在執行：`docker compose ps`
+- 確認 LINE Webhook URL 正確且 Verify 通過
+- 查看 log：`docker compose logs -f`
+
+**/同步 失敗**
+- 確認 Drive 資料夾已分享給 Service Account email
+- 確認 `.env` 的 `DRIVE_FOLDER_ID` 正確
+
+**查詢結果說找不到資料**
+- 確認文件已上傳至 Drive 並執行 `/同步`
+- `/同步` 後再執行 `/文件清單` 確認索引是否成功
+
+**容器啟動失敗**
+- 確認 `.env` 所有必填項目都有填值
+- 執行 `docker compose logs` 查看錯誤原因
