@@ -852,3 +852,93 @@ def answer(query: str, history: list[tuple[str, str]] | None = None) -> str:
     # Case 3: Actual content available
     text = llm_answer(query, hits, history) or extractive_answer(query, hits)
     return normalize_line_answer(text)
+
+
+def full_answer(query: str, history: list[tuple[str, str]] | None = None) -> str | None:
+    """GAS-style full-read: load ALL extracted text in one Gemini call. No FTS filtering."""
+    api_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
+    if not api_key:
+        return None
+
+    docs = []
+    total_chars = 0
+    MAX_CHARS = int(os.getenv("FULL_ANSWER_MAX_CHARS", "500000"))
+
+    if EXTRACTED_DIR.exists():
+        for txt_file in sorted(EXTRACTED_DIR.glob("*.txt")):
+            try:
+                content = txt_file.read_text(encoding="utf-8", errors="ignore").strip()
+            except Exception:
+                continue
+            if not content:
+                continue
+            entry = f"【{txt_file.stem}】\n{content}"
+            if total_chars + len(entry) > MAX_CHARS:
+                break
+            docs.append(entry)
+            total_chars += len(entry)
+
+    if not docs:
+        return None
+
+    corpus = "\n\n---\n\n".join(docs)
+    history_block = ""
+    if history:
+        lines = []
+        for q, a in history[-3:]:
+            lines.append(f"用戶：{q}")
+            lines.append(f"小秘書：{a[:300]}…")
+        history_block = "\n對話紀錄（最近幾輪，供參考）：\n" + "\n".join(lines) + "\n"
+
+    now = datetime.now(timezone(timedelta(hours=8)))
+    minguo_year = now.year - 1911
+    today = f"民國 {minguo_year} 年 {now.month} 月 {now.day} 日"
+
+    prompt = f"""你是「二大隊行政小秘書」，協助臺北市消防局第二救災救護大隊依據資料庫內容回覆議會諮詢。
+今日日期：{today}（「今年」即指 {minguo_year} 年，資料夾命名慣例為「{minguo_year}年度」）
+{history_block}
+【絕對禁止事項】
+- 禁止在資料庫中找不到相關數字、日期、場所時自行捏造任何數據
+- 禁止憑常識或推測補充資料庫沒有的內容
+- 不得使用任何 Markdown 符號（**、##、```），LINE 會把符號原樣顯示
+
+硬性規則：
+1. 只能根據下方「完整資料庫」原文回答。
+2. 資料不足時輸出：「現有資料庫未見明確內容，請確認相關文件已上傳並重建索引。」
+3. 用正式公務語氣。
+4. 敏感資料（人員名冊、危險物、毒化物）只提供統計摘要，不揭露完整明細。
+5. 回覆第一行必須是【摘要】，用一句話說明核心答案（不超過40字）。
+
+使用者問題：{query}
+
+完整資料庫（以下為全部文件原文，請在其中尋找相關內容）：
+{corpus}
+
+請依此格式回答（第一行必須是【摘要】）：
+【摘要】（一句話說明核心答案，不超過40字）
+報告人：二大隊行政小秘書
+日期：{today}
+
+根據……說明如下：
+
+一、查詢結果摘要：
+
+二、相關資料明細：
+
+三、深度分析與小秘書建議：
+
+資料來源：
+- ...
+
+以上報告。"""
+
+    try:
+        import google.generativeai as genai
+        genai.configure(api_key=api_key)
+        model = genai.GenerativeModel(os.getenv("GEMINI_MODEL", "gemini-2.5-flash"))
+        resp = model.generate_content(prompt)
+        text = getattr(resp, "text", "") or ""
+        return normalize_line_answer(clean_text(text)) if text else None
+    except Exception as e:
+        print(f"[full_answer] Gemini failed: {e}", flush=True)
+        return None

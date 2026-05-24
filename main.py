@@ -293,11 +293,9 @@ Drive 同步失敗：{e}
 
 以上報告。""", False
 
-    # General query: Codex-first test mode with conversation memory.
-    # Keep slash/system commands above deterministic; all normal questions go through Codex.
     with _HISTORY_LOCK:
         history = list(_CHAT_HISTORY.get(user_id, [])) if user_id else []
-    reply = rag.codex_answer(text, history=history) or rag.answer(text, history=history)
+    reply = rag.full_answer(text, history=history) or rag.answer(text, history=history)
     if user_id:
         with _HISTORY_LOCK:
             _CHAT_HISTORY[user_id].append((text, reply))
