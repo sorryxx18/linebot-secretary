@@ -337,11 +337,15 @@ def expanded_terms(query: str) -> list[str]:
             for v in vals:
                 if v not in terms:
                     terms.append(v)
-    # Resolve "今年" / "本年" to current Taiwan year so time-relative queries find the right chunks
+    # Resolve "今年" / "本年" to current Taiwan year AND Gregorian year
+    # (fire incident records use Gregorian dates like 2026/01/02)
     if "今年" in query or "本年" in query:
-        minguo_year = str(datetime.now(timezone(timedelta(hours=8))).year - 1911)
-        if minguo_year not in terms:
-            terms.append(minguo_year)
+        now_tw = datetime.now(timezone(timedelta(hours=8)))
+        minguo_year = str(now_tw.year - 1911)
+        gregorian_year = str(now_tw.year)
+        for yr in (minguo_year, gregorian_year):
+            if yr not in terms:
+                terms.append(yr)
     # Keep Latin/alphanumeric terms; skip Taiwan year numbers UNLESS explicitly in the query
     for t in re.findall(r"[A-Za-z0-9]{2,}", query):
         if t.isdigit() and 100 <= int(t) <= 200:
