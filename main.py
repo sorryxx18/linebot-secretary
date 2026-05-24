@@ -97,14 +97,18 @@ def check_admin(x_admin_token: str | None) -> None:
 
 
 def _extract_card_summary(reply_text: str) -> str:
-    """從回覆內容提取摘要，跳過樣板開頭與章節標題，抓第一段有實質內容的文字。"""
+    """從回覆內容提取摘要。優先抓 LLM 輸出的【摘要】行，否則退回啟發式提取。"""
     import re
-    skip_prefixes = ("報告人", "日期", "以上報告", "資料來源", "小秘書建議", "建議")
-    # 樣板開頭：「根據…說明如下」「依據…報告如下」等（不論後面是否還有文字）
-    boilerplate_re = re.compile(r"^(根據|依據|茲就|按|查|經查|報告).{0,30}(說明如下|報告如下|如下)[：:]")
-    # 章節標題：一、二、三、（一）（二）等
-    section_re = re.compile(r"^[一二三四五六七八九十]+[、。]|^\([一二三四五六七八九十]+\)")
+    # 優先：LLM 輸出的【摘要】行
+    m = re.search(r"^【摘要】(.+)", reply_text, re.MULTILINE)
+    if m:
+        s = m.group(1).strip()
+        return s[:80] + "…" if len(s) > 80 else s
 
+    # 退回：啟發式提取（跳過樣板行與章節標題）
+    skip_prefixes = ("報告人", "日期", "以上報告", "資料來源", "小秘書建議", "建議")
+    boilerplate_re = re.compile(r"^(根據|依據|茲就|按|查|經查|報告).{0,30}(說明如下|報告如下|如下)[：:]")
+    section_re = re.compile(r"^[一二三四五六七八九十]+[、。]|^\([一二三四五六七八九十]+\)")
     lines = []
     for line in reply_text.split("\n"):
         line = line.strip()

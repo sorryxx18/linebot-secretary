@@ -494,7 +494,8 @@ def normalize_line_answer(text: str) -> str:
     text = text.replace("**", "").replace("__", "")
     text = re.sub(r"^#{1,6}\s*", "", text, flags=re.MULTILINE)
     text = re.sub(r"^[-*]\s+(?=(卡片摘要|正式報告|資料來源|小秘書建議)[:：])", "", text, flags=re.MULTILINE)
-    # The Flex card already provides the card summary; remove duplicate text heading if Codex emits it.
+    # Strip 【摘要】 line — it goes to the Flex card, not the LINE text body.
+    text = re.sub(r"^【摘要】[^\n]*\n?", "", text).strip()
     text = re.sub(r"^卡片摘要[:：]\s*\n?", "", text).strip()
     return truncate_line_text(text)
 
@@ -571,7 +572,8 @@ def llm_answer(query: str, hits: list[SearchHit], history: list[tuple[str, str]]
 資料庫片段（這是唯一可用的資料，不得超出此範圍回答）：
 {context}
 
-請依此格式回答：
+請依此格式回答（第一行必須是【摘要】，用一句話說明核心答案，之後再寫完整報告）：
+【摘要】（一句話說明核心答案，不超過40字）
 報告人：二大隊行政小秘書
 日期：{taiwan_minguo_date()}
 
@@ -729,7 +731,7 @@ def codex_answer(query: str, history: list[tuple[str, str]] | None = None) -> st
 請遵守：
 1. 只能讀取資料，不得修改、新增或刪除任何檔案。
 2. 優先查 data/extracted、data/raw、data/index.sqlite3 內與問題相關的資料；必要時可用 Python/SQLite 查詢。
-3. LINE 會另外顯示 Flex 卡片摘要；你的文字訊息不要再輸出「卡片摘要」段落，請直接從正式報告正文開始。
+3. 回覆第一行必須是【摘要】，用一句話（不超過40字）說明核心答案，例如：【摘要】第二大隊現有救護車共20台，分布於9個分隊。
 4. 文字格式必須像正式公務報告：開頭「根據……說明如下：」，中段用「一、二、三、四、五、」分節，最後列「資料來源」與「小秘書建議」，結尾固定「以上報告。」
 5. 絕對不要使用 Markdown 符號，例如 **粗體**、## 標題、```；LINE 會把星號原樣顯示，造成版面很醜。
 6. 若資料不足，明確寫「現有資料庫未見明確內容」，不得捏造數字、日期、地點或人名。
