@@ -190,7 +190,7 @@ def build_reply(user_text: str, user_id: str = "") -> tuple[str, bool]:
         return f"您已在白名單中，{BOT_DISPLAY_NAME}已為您服務。", False
 
     if user_id and not _is_allowed(user_id):
-        return f"請先輸入啟用密語以使用{BOT_DISPLAY_NAME}。", False
+        return f"您尚未取得使用授權，請聯繫系統管理員。", False
     # ─────────────────────────────────────────────────────────────────────────
 
     if text in {"/狀態", "狀態", "status"}:
