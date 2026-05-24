@@ -295,7 +295,7 @@ Drive 同步失敗：{e}
 
     with _HISTORY_LOCK:
         history = list(_CHAT_HISTORY.get(user_id, [])) if user_id else []
-    reply = rag.full_answer(text, history=history) or rag.answer(text, history=history)
+    reply = rag.codex_answer(text, history=history) or rag.answer(text, history=history)
     if user_id:
         with _HISTORY_LOCK:
             _CHAT_HISTORY[user_id].append((text, reply))

@@ -728,30 +728,45 @@ def codex_answer(query: str, history: list[tuple[str, str]] | None = None) -> st
 
     now = datetime.now(timezone(timedelta(hours=8)))
     minguo_year = now.year - 1911
-    prompt = f"""你現在是「二大隊行政小秘書」的 LINE 回覆代理。請直接根據目前工作資料夾回覆使用者問題。
+
+    # Pre-load all extracted text so Codex has full context without file exploration
+    docs: list[str] = []
+    total_chars = 0
+    MAX_CHARS = int(os.getenv("CODEX_PRELOAD_MAX_CHARS", "400000"))
+    if EXTRACTED_DIR.exists():
+        for txt_file in sorted(EXTRACTED_DIR.glob("*.txt")):
+            try:
+                content = txt_file.read_text(encoding="utf-8", errors="ignore").strip()
+            except Exception:
+                continue
+            if not content:
+                continue
+            entry = f"【{txt_file.stem}】\n{content}"
+            if total_chars + len(entry) > MAX_CHARS:
+                break
+            docs.append(entry)
+            total_chars += len(entry)
+    corpus_block = (
+        "\n\n完整資料庫（所有文件已預載，無需讀取任何檔案）：\n"
+        + "\n\n---\n\n".join(docs)
+        if docs else ""
+    )
+
+    prompt = f"""你現在是「二大隊行政小秘書」的 LINE 回覆代理。
 
 今日日期：民國 {minguo_year} 年 {now.month} 月 {now.day} 日（「今年」即指 {minguo_year} 年，資料夾命名慣例為「{minguo_year}年度」）
 
-工作根目錄：{BASE_DIR}
-主要資料位置：
-- 原始檔：{RAW_DIR}
-- 抽取文字：{EXTRACTED_DIR}
-- SQLite 索引：{DB_PATH}
-- Google Drive 原始連結對照表：{DRIVE_MANIFEST_PATH}
-
 請遵守：
-1. 只能讀取資料，不得修改、新增或刪除任何檔案。
-2. 優先查 data/extracted、data/raw、data/index.sqlite3 內與問題相關的資料；必要時可用 Python/SQLite 查詢。
-3. 回覆第一行必須是【摘要】，用一句話（不超過40字）說明核心答案，例如：【摘要】第二大隊現有救護車共20台，分布於9個分隊。
-4. 文字格式必須像正式公務報告：開頭「根據……說明如下：」，中段用「一、二、三、四、五、」分節，最後列「資料來源」與「小秘書建議」，結尾固定「以上報告。」
-5. 絕對不要使用 Markdown 符號，例如 **粗體**、## 標題、```；LINE 會把星號原樣顯示，造成版面很醜。
-6. 若資料不足，明確寫「現有資料庫未見明確內容」，不得捏造數字、日期、地點或人名。
-7. 涉及人員名冊、個資、危險物、毒化物、救災部署等敏感資料，只提供摘要與建議，不揭露完整明細。
-8. 資料來源請列實際查到的原始雲端檔案連結；請用 Google Drive 原始連結對照表把本機檔名轉成雲端 URL，不要只列本機 .txt 檔名。
-9. 回覆要比一般摘要更像「深度報告」：若資料足夠，請包含現況、分布/統計、重點分析、風險或管理意涵、建議作法；但仍需控制在 LINE 可閱讀長度。
-10. 不要描述你執行了哪些 shell 指令。
+1. 完整資料庫已預載於本 prompt 末尾，直接在其中找答案，不需要讀取任何本機檔案。
+2. 回覆第一行必須是【摘要】，用一句話（不超過40字）說明核心答案。
+3. 文字格式必須像正式公務報告：開頭「根據……說明如下：」，中段用「一、二、三、」分節，最後列「資料來源」與「小秘書建議」，結尾固定「以上報告。」
+4. 絕對不要使用 Markdown 符號（**、##、```），LINE 會把符號原樣顯示。
+5. 若資料不足，明確寫「現有資料庫未見明確內容」，不得捏造數字、日期、地點或人名。
+6. 涉及人員名冊、個資、危險物、毒化物、救災部署等敏感資料，只提供摘要，不揭露完整明細。
+7. 不要描述你執行了哪些指令。
 {history_block}
 使用者問題：{query}
+{corpus_block}
 """
 
     with tempfile.NamedTemporaryFile("w+", suffix=".txt", delete=False) as f:
