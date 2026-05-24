@@ -337,8 +337,12 @@ def expanded_terms(query: str) -> list[str]:
             for v in vals:
                 if v not in terms:
                     terms.append(v)
-    # Keep Latin/alphanumeric terms, but skip standalone Taiwan year numbers (115, 114...)
-    # which match too many documents and dilute search quality
+    # Resolve "今年" / "本年" to current Taiwan year so time-relative queries find the right chunks
+    if "今年" in query or "本年" in query:
+        minguo_year = str(datetime.now(timezone(timedelta(hours=8))).year - 1911)
+        if minguo_year not in terms:
+            terms.append(minguo_year)
+    # Keep Latin/alphanumeric terms; skip Taiwan year numbers UNLESS explicitly in the query
     for t in re.findall(r"[A-Za-z0-9]{2,}", query):
         if t.isdigit() and 100 <= int(t) <= 200:
             continue
@@ -377,9 +381,9 @@ def search(query: str, limit: int = 8) -> list[SearchHit]:
             if cid in seen_ids:
                 return False
             seen_ids.add(cid)
-            # Allow at most 2 chunks per document to avoid big files dominating
+            # Allow at most 6 chunks per document so multi-year files (e.g. 火災統計表) cover more years
             doc_count = sum(1 for h in hits if h.file_name == fname)
-            if doc_count >= 2:
+            if doc_count >= 6:
                 return False
             page = r["page"] if "page" in r.keys() else None
             sheet = r["sheet"] if "sheet" in r.keys() else None
@@ -729,23 +733,57 @@ def codex_answer(query: str, history: list[tuple[str, str]] | None = None) -> st
     now = datetime.now(timezone(timedelta(hours=8)))
     minguo_year = now.year - 1911
 
-    # Pre-load all extracted text so Codex has full context without file exploration
+    # Pre-load extracted text: relevant files in full first, then others with per-file cap
     docs: list[str] = []
     total_chars = 0
     MAX_CHARS = int(os.getenv("CODEX_PRELOAD_MAX_CHARS", "400000"))
+    PER_FILE_MAX = int(os.getenv("CODEX_PER_FILE_MAX_CHARS", "40000"))
+
+    # Find which files are relevant to this query
+    try:
+        hits_preview = search(query, limit=6)
+        relevant_names = {h.file_name for h in hits_preview}
+    except Exception:
+        relevant_names = set()
+
+    loaded_names: set[str] = set()
+
+    def _load_file(txt_file: Path, cap: int) -> None:
+        nonlocal total_chars
+        try:
+            content = txt_file.read_text(encoding="utf-8", errors="ignore").strip()
+        except Exception:
+            return
+        if not content:
+            return
+        snippet = content[:cap]
+        entry = f"【{txt_file.stem}】\n{snippet}"
+        if total_chars + len(entry) > MAX_CHARS:
+            return
+        docs.append(entry)
+        total_chars += len(entry)
+        loaded_names.add(txt_file.name)
+
     if EXTRACTED_DIR.exists():
+        # Pass 1: relevant files — load the LAST portion (tail) so multi-year files show recent data
         for txt_file in sorted(EXTRACTED_DIR.glob("*.txt")):
-            try:
-                content = txt_file.read_text(encoding="utf-8", errors="ignore").strip()
-            except Exception:
-                continue
-            if not content:
-                continue
-            entry = f"【{txt_file.stem}】\n{content}"
-            if total_chars + len(entry) > MAX_CHARS:
-                break
-            docs.append(entry)
-            total_chars += len(entry)
+            if txt_file.name in relevant_names or txt_file.stem in relevant_names:
+                try:
+                    content = txt_file.read_text(encoding="utf-8", errors="ignore").strip()
+                except Exception:
+                    continue
+                # For large files, prefer the tail (more recent data tends to be at the end)
+                tail_cap = min(len(content), 80000)
+                snippet = content[-tail_cap:] if len(content) > tail_cap else content
+                entry = f"【{txt_file.stem}】\n{snippet}"
+                if total_chars + len(entry) <= MAX_CHARS:
+                    docs.append(entry)
+                    total_chars += len(entry)
+                    loaded_names.add(txt_file.name)
+        # Pass 2: remaining files with per-file cap
+        for txt_file in sorted(EXTRACTED_DIR.glob("*.txt")):
+            if txt_file.name not in loaded_names:
+                _load_file(txt_file, PER_FILE_MAX)
     corpus_block = (
         "\n\n完整資料庫（所有文件已預載，無需讀取任何檔案）：\n"
         + "\n\n---\n\n".join(docs)
