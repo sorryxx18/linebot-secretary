@@ -98,11 +98,18 @@ def init_db() -> None:
             )
             """
         )
+        # Migrate: drop FTS table if it uses the old unicode61 tokenizer
+        fts_row = con.execute(
+            "SELECT sql FROM sqlite_master WHERE type='table' AND name='chunks_fts'"
+        ).fetchone()
+        if fts_row and "unicode61" in (fts_row[0] or ""):
+            con.execute("DROP TABLE IF EXISTS chunks_fts")
+            con.commit()
         con.execute(
             """
             CREATE VIRTUAL TABLE IF NOT EXISTS chunks_fts USING fts5(
                 file_name, title, content,
-                tokenize='unicode61 remove_diacritics 2'
+                tokenize='trigram'
             )
             """
         )
@@ -653,15 +660,15 @@ def _hits_match_query(query: str, hits: list[SearchHit]) -> bool:
     # 1. Check KNOWN_TERMS in real content (require ≥2 occurrences for weak matches)
     for t in KNOWN_TERMS:
         if t in query and t in real_content:
-            if _count(t, real_content) >= 2:
+            if _count(t, real_content) >= 1:
                 return True
     # 2. Check SYNONYMS in real content
     for k, vals in SYNONYMS.items():
         if k in query:
             for term in [k] + vals:
-                if _count(term, real_content) >= 2:
+                if _count(term, real_content) >= 1:
                     return True
-    # 3. Extract bigrams/trigrams from query and check in real content (require ≥2 occurrences)
+    # 3. Extract bigrams/trigrams from query and check in real content (require ≥1 occurrence)
     question_stop = {"什麼", "哪些", "有什", "沒有", "如何", "怎樣", "幾個", "多少",
                      "請問", "告訴", "想知", "知道", "查詢", "有關", "情形", "情況", "說明"}
     cn_only = re.sub(r"[^一-鿿]", "", query)
@@ -671,7 +678,7 @@ def _hits_match_query(query: str, hits: list[SearchHit]) -> bool:
             gram = cn_only[i:i+n]
             if gram not in question_stop:
                 candidate_terms.add(gram)
-    content_matches = [t for t in candidate_terms if len(t) >= 2 and _count(t, real_content) >= 2]
+    content_matches = [t for t in candidate_terms if len(t) >= 2 and _count(t, real_content) >= 1]
     if content_matches:
         return True
     return False
@@ -711,7 +718,7 @@ def codex_answer(query: str, history: list[tuple[str, str]] | None = None) -> st
     """
     codex_bin = os.getenv("CODEX_BIN", "codex")
     model = os.getenv("CODEX_MODEL", "gpt-5.4")
-    timeout = int(os.getenv("CODEX_TIMEOUT", "150"))
+    timeout = int(os.getenv("CODEX_TIMEOUT", "45"))
     history_block = ""
     if history:
         recent = history[-3:]
@@ -719,7 +726,11 @@ def codex_answer(query: str, history: list[tuple[str, str]] | None = None) -> st
             f"使用者：{q}\n小秘書：{a[:500]}" for q, a in recent
         )
 
+    now = datetime.now(timezone(timedelta(hours=8)))
+    minguo_year = now.year - 1911
     prompt = f"""你現在是「二大隊行政小秘書」的 LINE 回覆代理。請直接根據目前工作資料夾回覆使用者問題。
+
+今日日期：民國 {minguo_year} 年 {now.month} 月 {now.day} 日（「今年」即指 {minguo_year} 年，資料夾命名慣例為「{minguo_year}年度」）
 
 工作根目錄：{BASE_DIR}
 主要資料位置：
