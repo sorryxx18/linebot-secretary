@@ -97,16 +97,26 @@ def check_admin(x_admin_token: str | None) -> None:
 
 
 def _extract_card_summary(reply_text: str) -> str:
-    """從回覆內容提取摘要（跳過報告人/日期行，取前兩段有意義的文字）"""
-    skip = {"報告人", "日期", "以上報告", "資料來源"}
+    """從回覆內容提取摘要，跳過樣板開頭與章節標題，抓第一段有實質內容的文字。"""
+    import re
+    skip_prefixes = ("報告人", "日期", "以上報告", "資料來源", "小秘書建議", "建議")
+    # 樣板開頭：「根據…說明如下」「依據…報告如下」等
+    boilerplate_re = re.compile(r"^(根據|依據|茲就|按|查|經查|報告).{0,20}(說明如下|報告如下|如下)[：:]?\s*$")
+    # 章節標題：一、二、三、（一）（二）等
+    section_re = re.compile(r"^[一二三四五六七八九十]+[、。]|^\([一二三四五六七八九十]+\)")
+
     lines = []
     for line in reply_text.split("\n"):
         line = line.strip()
         if not line:
             continue
-        if any(line.startswith(s) for s in skip):
+        if any(line.startswith(s) for s in skip_prefixes):
             continue
         if line.startswith("-") or line.startswith("•"):
+            continue
+        if boilerplate_re.match(line):
+            continue
+        if section_re.match(line):
             continue
         lines.append(line)
         if len(lines) >= 2:
